@@ -39,14 +39,13 @@ class Queue(object):
     def clear(self):
         self.__list = []
 
-def setCamThresh(address, *args):
-    print(f"{address}: {args}")
+laserTracking = 0
 
 # Toggles tracking of the laser dot
 def setLaserTracking(address, *args):
+    global laserTracking
     laserTracking = args[0] 
-
-    if args[0]:
+    if args[0] == 1:
         print("Starting laser point tracking")
     else: 
         print("Stopping laser point tracking")
@@ -63,12 +62,14 @@ args = parser.parse_args()
 
 # Start the OSC client
 client = udp_client.SimpleUDPClient(args.ip, args.port)
+oscSleep = 0.01 # seconds
 
 # Start the OSC server
-serverIP = "192.168.1.247"
+#serverIP = "192.168.1.247"
+serverIP = args.ip 
 serverPort = 5005
 dispatcher = dispatcher.Dispatcher()
-dispatcher.map("/augCanvas/setThresh", print)
+dispatcher.map("/augCanvas/setThresh", setLaserTracking)
 
 # Start webcam server
 queue  = Queue(maxsize=100)
@@ -76,19 +77,22 @@ server = mjpg.MjpgServerThread("0.0.0.0", mjpgPort, mjpg.BytesImageHandlerFactor
 server.start()
 
 camID = 69
-laser_threshold =  (64, 100, -128, 127, -128, 127) # threshold for bright spot
-laserTracking = False
+#laser_threshold =  (64, 100, -128, 127, -128, 127) # threshold for bright spot
+laser_threshold = (28,-36,-14,68,-5,15)
 
 async def loop():
-    
+   
+    start = time.time()
+ 
     # Main Loop
     while True:
 
         # Show camera image on LCD display
         img = camera.capture()
 
-        if laserTracking:    
+        if laserTracking == 1:    
             ma = img.find_blobs([ laser_threshold  ]) #
+
             for i in ma:
                 img.draw_rectangle(i["x"], i["y"], i["x"] + i["w"], i["y"] + i["h"], (255, 0, 0), 1)
                 client.send_message("/augCanvas/trackDot", [ camID, i["x"], i["y"], i["w"], i["h"] ])
@@ -106,7 +110,7 @@ async def loop():
     
         queue.put(mjpg.BytesImage(jpg))
         time.sleep( 1.0 / frameRate ) # need to delay for atleast 100ms otherwise there is too much lag in sending   
-        await asyncio.sleep(1)
+        await asyncio.sleep( oscSleep )
 
 async def init_main():
     print("setting up server")
