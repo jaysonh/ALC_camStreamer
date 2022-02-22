@@ -1,8 +1,12 @@
+# Add the following line to the end of /etc/init.d/rc.final
+# python3 /home/projects/camStream.py --boot 1 &
+
 from maix import camera, mjpg, display, image
 import socket, select
 import _maix, time
 from io import BytesIO
 import argparse
+import uuid
 
 from pythonosc import osc_message_builder
 from pythonosc import udp_client
@@ -39,9 +43,27 @@ class Queue(object):
     def clear(self):
         self.__list = []
 
-laserTracking = 0
+# Load the arguments
+parser = argparse.ArgumentParser()
+parser.add_argument("--boot", type=int, default=0, help="Is this script being l")
+parser.add_argument("--ip", default="127.0.0.1", help="The ip of the OSC server")
+parser.add_argument("--port", type=int, default=666, help="The port the OSC serv")
+parser.add_argument("--stream", type=int, default=1, help="Toggle video stream")
+args = parser.parse_args()
+
+# First check if script is being launched from boot
+# if it is then wait for 10 seconds before running
+# to give time for network adapter to connect to wifi
+if args.boot == 1:
+    print("Launched from boot")
+    time.sleep(10.0)
+
+# Create unique ID for this camera
+camID = uuid.getnode()
+print("CameraID: ", camID)
 
 # Toggles tracking of the laser dot
+laserTracking = 0
 def setLaserTracking(address, *args):
     global laserTracking
     laserTracking = args[0] 
@@ -54,17 +76,13 @@ server   = None
 mjpgPort = 9999
 frameRate = 30.0
 
-# Parse arguments
-parser = argparse.ArgumentParser()
-parser.add_argument("--ip", default="127.0.0.1", help="The ip of the OSC server")
-parser.add_argument("--port", type=int, default=5005, help="The port the OSC server is listening on")
-args = parser.parse_args()
-
 # Start the OSC client
+# for sending data to main control application
 client = udp_client.SimpleUDPClient(args.ip, args.port)
 oscSleep = 0.01 # seconds
 
 # Start the OSC server
+# for receiving commands from main control application
 #serverIP = "192.168.1.247"
 serverIP = args.ip 
 serverPort = 5005
@@ -72,13 +90,14 @@ dispatcher = dispatcher.Dispatcher()
 dispatcher.map("/augCanvas/setThresh", setLaserTracking)
 
 # Start webcam server
-queue  = Queue(maxsize=100)
-server = mjpg.MjpgServerThread("0.0.0.0", mjpgPort, mjpg.BytesImageHandlerFactory(q=queue) ) 
-server.start()
+streamEnabled = args.stream
+if streamEnabled == 1:
+    queue  = Queue(maxsize=100)
+    server = mjpg.MjpgServerThread("0.0.0.0", mjpgPort, mjpg.BytesImageHandlerFactory(q=queue) ) 
+    server.start()
 
-camID = 69
 #laser_threshold =  (64, 100, -128, 127, -128, 127) # threshold for bright spot
-laser_threshold = (28,-36,-14,68,-5,15)
+laser_threshold = (28,-36,-14,68,-5,15) # threshold for green 
 
 async def loop():
    
@@ -86,7 +105,6 @@ async def loop():
  
     # Main Loop
     while True:
-
         # Show camera image on LCD display
         img = camera.capture()
 
@@ -101,15 +119,18 @@ async def loop():
         display.show(img)
    
         # Stream over network
-        streamingImg = img
-        jpg = _maix.rgb2jpg(
+        if streamEnabled:
+            streamingImg = img
+            jpg = _maix.rgb2jpg(
                     streamingImg.convert("RGB").tobytes(),
                     streamingImg.width,
                     streamingImg.height,
                 )
     
-        queue.put(mjpg.BytesImage(jpg))
-        time.sleep( 1.0 / frameRate ) # need to delay for atleast 100ms otherwise there is too much lag in sending   
+            queue.put(mjpg.BytesImage(jpg))
+            time.sleep( 1.0 / frameRate ) # need to delay for atleast 100ms otherwise there is too much lag in sending   
+        
+        # sleep to let osc server receive and parse messages
         await asyncio.sleep( oscSleep )
 
 async def init_main():
