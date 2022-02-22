@@ -7,7 +7,7 @@ import _maix, time
 from io import BytesIO
 import argparse
 import uuid
-
+from pathlib import Path
 from pythonosc import osc_message_builder
 from pythonosc import udp_client
 from pythonosc import dispatcher
@@ -59,7 +59,10 @@ if args.boot == 1:
     time.sleep(10.0)
 
 # Create unique ID for this camera
-camID = uuid.getnode()
+fileContents = Path('/home/projects/UNIQUE_ID').read_text()                     
+fileContents = fileContents.replace('\n','') 
+fileContents = fileContents.replace(' ','')
+camID = fileContents                    
 print("CameraID: ", camID)
 
 # Toggles tracking of the laser dot
