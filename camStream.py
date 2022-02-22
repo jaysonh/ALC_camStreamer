@@ -64,13 +64,26 @@ print("CameraID: ", camID)
 
 # Toggles tracking of the laser dot
 laserTracking = 0
-def setLaserTracking(address, *args):
+def setLaserTrack(address, *args):
     global laserTracking
     laserTracking = args[0] 
     if args[0] == 1:
         print("Starting laser point tracking")
     else: 
         print("Stopping laser point tracking")
+
+# Set the threshold values for point tracking
+trackUpThresh  = 100
+trackLowThresh = 70
+def setLaserThresh(address, *args):
+    global trackUpThresh;
+    global trackLowThresh;
+    if args[0] < args[1]: 
+        trackLowThresh = args[0]
+        trackUpThresh  = args[1]
+        print("set track thresholds", trackLowThresh, " ", trackUpThresh)
+    else:
+        print("ERROR! lower thresh above upper thresh")
 
 server   = None
 mjpgPort = 9999
@@ -87,7 +100,8 @@ oscSleep = 0.01 # seconds
 serverIP = args.ip 
 serverPort = 5005
 dispatcher = dispatcher.Dispatcher()
-dispatcher.map("/augCanvas/setThresh", setLaserTracking)
+dispatcher.map("/augCanvas/setThresh", setLaserThresh)
+dispatcher.map("/augCanvas/setTrack",  setLaserTrack)
 
 # Start webcam server
 streamEnabled = args.stream
@@ -96,8 +110,8 @@ if streamEnabled == 1:
     server = mjpg.MjpgServerThread("0.0.0.0", mjpgPort, mjpg.BytesImageHandlerFactory(q=queue) ) 
     server.start()
 
-#laser_threshold =  (64, 100, -128, 127, -128, 127) # threshold for bright spot
-laser_threshold = (28,-36,-14,68,-5,15) # threshold for green 
+laser_threshold =  (64, 100, -128, 127, -128, 127) # threshold for bright spot
+#laser_threshold = (28,-36,-14,68,-5,15) # threshold for green 
 
 async def loop():
    
@@ -109,8 +123,8 @@ async def loop():
         img = camera.capture()
 
         if laserTracking == 1:    
-            ma = img.find_blobs([ laser_threshold  ]) #
-
+            #ma = img.find_blobs([ laser_threshold  ]) #
+            ma = img.find_blobs([( trackLowThresh, trackUpThresh , -128,127, -128,127)])
             for i in ma:
                 img.draw_rectangle(i["x"], i["y"], i["x"] + i["w"], i["y"] + i["h"], (255, 0, 0), 1)
                 client.send_message("/augCanvas/trackDot", [ camID, i["x"], i["y"], i["w"], i["h"] ])
