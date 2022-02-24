@@ -45,9 +45,11 @@ class Queue(object):
 
 # Load the arguments
 parser = argparse.ArgumentParser()
-parser.add_argument("--boot", type=int, default=0, help="Is this script being l")
-parser.add_argument("--ip", default="127.0.0.1", help="The ip of the OSC server")
-parser.add_argument("--port", type=int, default=666, help="The port the OSC serv")
+parser.add_argument("--boot", type=int, default=0, help="Is this script being launched at bootup")
+parser.add_argument("--serverIP", default="192.168.1.198", help="The ip for the ALC host")
+parser.add_argument("--serverPort", type=int, default=666, help="The port for the ALC host")
+parser.add_argument("--clientPort", default=667, type=int, help="The port for this client OSC")
+parser.add_argument("--clientIP",   default="192.168.1.247", help="The IP for this device")
 parser.add_argument("--stream", type=int, default=1, help="Toggle video stream")
 args = parser.parse_args()
 
@@ -88,20 +90,21 @@ def setLaserThresh(address, *args):
     else:
         print("ERROR! lower thresh above upper thresh")
 
-server   = None
-mjpgPort = 9999
+server    = None
+mjpgPort  = 9999
 frameRate = 30.0
 
 # Start the OSC client
 # for sending data to main control application
-client = udp_client.SimpleUDPClient(args.ip, args.port)
+client = udp_client.SimpleUDPClient(args.serverIP, args.serverPort) # "192.168.1.198", 666)
 oscSleep = 0.01 # seconds
 
 # Start the OSC server
 # for receiving commands from main control application
 #serverIP = "192.168.1.247"
-serverIP = args.ip 
-serverPort = 5005
+serverIP   = args.clientIP   #"192.168.1.247" 
+serverPort = args.clientPort #667
+
 dispatcher = dispatcher.Dispatcher()
 dispatcher.map("/augCanvas/setThresh", setLaserThresh)
 dispatcher.map("/augCanvas/setTrack",  setLaserTrack)
@@ -113,7 +116,8 @@ if streamEnabled == 1:
     server = mjpg.MjpgServerThread("0.0.0.0", mjpgPort, mjpg.BytesImageHandlerFactory(q=queue) ) 
     server.start()
 
-laser_threshold =  (64, 100, -128, 127, -128, 127) # threshold for bright spot
+laser_threshold = ( 14, 36, -71, 81, 73, 41 )
+#laser_threshold =  (64, 100, -128, 127, -128, 127) # threshold for bright spot
 #laser_threshold = (28,-36,-14,68,-5,15) # threshold for green 
 
 async def loop():
@@ -126,12 +130,12 @@ async def loop():
         img = camera.capture()
 
         if laserTracking == 1:    
-            #ma = img.find_blobs([ laser_threshold  ]) #
-            ma = img.find_blobs([( trackLowThresh, trackUpThresh , -128,127, -128,127)])
-            for i in ma:
-                img.draw_rectangle(i["x"], i["y"], i["x"] + i["w"], i["y"] + i["h"], (255, 0, 0), 1)
-                client.send_message("/augCanvas/trackDot", [ camID, i["x"], i["y"], i["w"], i["h"] ])
-
+            ma = img.find_blobs([ laser_threshold  ]) #
+            if len(ma) > 0:
+            #for i in ma:
+                i = ma[0] # get the first (hopefuly largest) blob
+                img.draw_rectangle(i["x"], i["y"], i["x"] + i["w"], i["y"] + i["h"], (255, 255, 255), 1)
+                client.send_message("/augCanvas/laserPt", [ camID, 0, i["x"], i["y"], i["w"], i["h"] ] )   
         # Show camera image on LCD display
         display.show(img)
    
